@@ -1,9 +1,17 @@
 # Playlist Auto-Liker
 ---
-**Extensión para navegadores Chromium que recorre una playlist de YouTube y da Me Gusta automáticamente a los videos pendientes.**
-Funciona íntegramente en el cliente con Manifest V3. Omite al instante los videos ya likeados. Permite recorrido ascendente o descendente.
+**Extensión local-first para navegadores Chromium que recorre playlists de YouTube y da Me Gusta automáticamente.**
+100% privada por diseño: sin servidores, sin telemetría ni recopilación de datos. Auditada para máximo rendimiento y seguridad.
 
 Español · [English](README.en.md)
+
+## Privacidad y Seguridad
+
+- **Local-first y privada por defecto**: no existe backend, base de datos externa ni llamadas de telemetría. Toda la lógica se ejecuta exclusivamente en el navegador del usuario.
+- **Sin recopilación de datos personales**: ni contraseñas, ni tokens de sesión, ni credenciales de Google son leídos o almacenados. Las acciones se realizan sobre los controles accesibles estándar del DOM de YouTube.
+- **Almacenamiento estrictamente local**: el historial de videos likeados y las preferencias de intervalo se guardan únicamente en `chrome.storage.local` dentro de tu máquina.
+- **Código auditable**: arquitectura simple en JavaScript puro, sin dependencias externas ofuscadas ni paquetes de terceros en el código en producción.
+- **Permisos mínimos**: solo solicita `storage` (preferencias e historial local), `scripting` (inyección en pestañas ya abiertas) y acceso al dominio `https://www.youtube.com/*`.
 
 ## Instalación
 

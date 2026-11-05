@@ -1,9 +1,17 @@
 # Playlist Auto-Liker
 ---
-**Chromium browser extension that traverses YouTube playlists and automatically likes unliked videos.**
-Works entirely in the client with Manifest V3. Skips already-liked videos instantly. Traverses in ascending or descending order.
+**Local-first Chromium extension that traverses YouTube playlists and automatically likes unliked videos.**
+100% private by design: zero servers, zero telemetry or data collection. Audited for uncompromised performance and safety.
 
 [Español](README.md) · English
+
+## Privacy & Security
+
+- **Local-first and private by default**: runs entirely inside your browser. No backend, no external databases, and zero tracking or telemetry calls.
+- **No personal data collection**: credentials, session tokens, and account data are never touched, read, or stored. Actions interact exclusively with standard accessible DOM elements on YouTube.
+- **Strictly local storage**: your liked history and interval configuration remain strictly on your machine using `chrome.storage.local`.
+- **Auditable zero-dependency code**: built with clean vanilla JavaScript, without obfuscation or third-party runtime npm packages.
+- **Least-privilege permissions**: requests only `storage` (local settings and history), `scripting` (tab injection), and host access restricted to `https://www.youtube.com/*`.
 
 ## Installation
 
