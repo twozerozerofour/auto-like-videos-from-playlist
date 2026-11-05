@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Playlist Auto-Liker · banco de pruebas</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; background: #0f0f0f; color: #eee; font: 13px/1.5 system-ui, sans-serif; }
+      header { padding: 16px 20px; border-bottom: 1px solid #333; }
+      h1 { margin: 0; font-size: 17px; }
+      main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 20px; }
+      section { border: 1px solid #333; border-radius: 10px; padding: 14px; background: #171717; }
+      h2 { margin: 0 0 10px; font-size: 13px; color: #ff5c74; text-transform: uppercase; letter-spacing: .06em; }
+      #results { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; }
+      .ok { color: #2ecc71; }
+      .bad { color: #e74c3c; }
+      #log { font-family: ui-monospace, monospace; font-size: 11px; color: #aaa; max-height: 300px; overflow: auto; white-space: pre-wrap; }
+      #stage { margin: 0 20px 20px; padding: 12px; border: 1px solid #333; border-radius: 10px; background: #101010; }
+      like-button-view-model, ytd-watch-flexy, ytd-playlist-panel-renderer, ytd-playlist-panel-video-renderer, ytd-watch-metadata { display: block; }
+      #stage button { font: inherit; padding: 4px 10px; margin-top: 6px; }
+      #stage a { color: #7fb2ff; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Playlist Auto-Liker · banco de pruebas</h1>
+      <p style="margin: 4px 0 0; color: #999">
+        Ejecuta el content script real contra un DOM de YouTube simulado. No toca ninguna cuenta.
+      </p>
+    </header>
+    <main>
+      <section>
+        <h2>Resultado</h2>
+        <div id="results">Ejecutando…</div>
+      </section>
+      <section>
+        <h2>Registro</h2>
+        <div id="log"></div>
+      </section>
+    </main>
+
+    <div id="stage">
+      <ytd-watch-flexy video-id="harness1">
+        <ytd-watch-metadata>
+          <h1><yt-formatted-string id="video-title">Video de prueba 1</yt-formatted-string></h1>
+          <div id="top-level-buttons-computed">
+            <like-button-view-model>
+              <button id="like-button" type="button" aria-pressed="false" aria-label="Me gusta">👍</button>
+            </like-button-view-model>
+          </div>
+        </ytd-watch-metadata>
+      </ytd-watch-flexy>
+
+      <div id="movie_player" class="html5-video-player">
+        <button class="ytp-prev-button ytp-button" type="button">Anterior</button>
+        <button class="ytp-next-button ytp-button" type="button">Siguiente</button>
+      </div>
+
+      <ytd-playlist-panel-renderer>
+        <div id="header-description">
+          <h3><a href="/playlist?list=PLHARNESS">Playlist de prueba</a></h3>
+          <span class="index-message">1 / 3</span>
+        </div>
+      </ytd-playlist-panel-renderer>
+    </div>
+
+    <script>
+      (function () {
+        'use strict';
+
+        history.replaceState(null, '', '/watch?v=harness1&list=PLHARNESS');
+
+        const logElement = document.getElementById('log');
+        const resultElement = document.getElementById('results');
+        const logLines = [];
+        const clicksByVideo = {};
+        const store = {
+          'pal.config': {
+            mode: 'fixed',
+            fixedSeconds: 1,
+            minSeconds: 1,
+            maxSeconds: 2,
+            direction: 'ascending',
+          },
+          'pal.history': {},
+        };
+        const messageListeners = [];
+        const changeListeners = [];
+
+        let videos = [
+          { id: 'harness1', title: 'Video de prueba 1' },
+          { id: 'harness2', title: 'Video de prueba 2' },
+          { id: 'harness3', title: 'Video de prueba 3' },
+        ];
+        let index = 0;
+        const likeOrder = [];
+        let prevButtonRestarts = false;
+        let prevButtonClicks = 0;
+
+        function log(message) {
+          logLines.push(new Date().toISOString().slice(11, 23) + '  ' + message);
+          logElement.textContent = logLines.join('\n');
+        }
+
+        function sleep(ms) {
+          return new Promise((resolve) => setTimeout(resolve, ms));
+        }
+
+        // Minimal chrome.* mock used by the real content script.
+        globalThis.chrome = {
+          storage: {
+            local: {
+              get: function (keys) {
+                if (typeof keys === 'string') {
+                  return Promise.resolve({ [keys]: store[keys] });
+                }
+                if (Array.isArray(keys)) {
+                  const out = {};
+                  keys.forEach(function (key) {
+                    out[key] = store[key];
+                  });
+                  return Promise.resolve(out);
+                }
+                return Promise.resolve(Object.assign({}, store));
+              },
+              set: function (values) {
+                Object.assign(store, values);
+                return Promise.resolve();
+              },
+            },
+            onChanged: {
+              addListener: function (listener) {
+                changeListeners.push(listener);
+              },
+            },
+          },
+          runtime: {
+            onMessage: {
+              addListener: function (listener) {
+                messageListeners.push(listener);
+              },
+            },
+          },
+        };
+
+        function send(message) {
+          return new Promise(function (resolve) {
+            let settled = false;
+            const done = function (value) {
+              if (!settled) {
+                settled = true;
+                resolve(value);
+              }
+            };
+            messageListeners.forEach(function (listener) {
+              try {
+                listener(message, {}, done);
+              } catch (error) {
+                done({ ok: false, error: String(error) });
+              }
+            });
+            setTimeout(function () {
+              done({ ok: false, error: 'timeout' });
+            }, 8000);
+          });
+        }
+
+        async function getState() {
+          const response = await send({ type: 'PAL_GET_STATE' });
+          return response && response.state;
+        }
+
+        async function waitForState(predicate, timeoutMs) {
+          const deadline = Date.now() + (timeoutMs || 8000);
+          let state = null;
+          while (Date.now() < deadline) {
+            state = await getState();
+            if (state && predicate(state)) return state;
+            await sleep(60);
+          }
+          return state;
+        }
+
+        function currentVideo() {
+          return videos[index];
+        }
+
+        function renderPlaylistItems() {
+          const panel = document.querySelector('ytd-playlist-panel-renderer');
+          panel.querySelectorAll('ytd-playlist-panel-video-renderer').forEach(function (item) {
+            item.remove();
+          });
+
+          videos.forEach(function (video) {
+            const item = document.createElement('ytd-playlist-panel-video-renderer');
+            const anchor = document.createElement('a');
+            anchor.id = 'wc-endpoint';
+            anchor.setAttribute('href', '/watch?v=' + video.id + '&list=PLHARNESS');
+            anchor.textContent = video.title;
+            item.appendChild(anchor);
+            panel.appendChild(item);
+          });
+        }
+
+        function renderVideo() {
+          const video = currentVideo();
+          const flexy = document.querySelector('ytd-watch-flexy');
+          flexy.setAttribute('video-id', video.id);
+
+          const title = document.querySelector('#video-title');
+          title.textContent = video.title;
+
+          const like = document.querySelector('like-button-view-model button');
+          like.setAttribute('aria-pressed', 'false');
+          like.setAttribute('aria-label', 'Me gusta');
+
+          const items = Array.from(document.querySelectorAll('ytd-playlist-panel-video-renderer'));
+          items.forEach(function (item, itemIndex) {
+            if (itemIndex === index) item.setAttribute('selected', '');
+            else item.removeAttribute('selected');
+          });
+
+          const indexMsg = document.querySelector('.index-message');
+          if (indexMsg) {
+            indexMsg.textContent = (index + 1) + ' / ' + videos.length;
+          }
+
+          history.pushState(null, '', '/watch?v=' + video.id + '&list=PLHARNESS');
+          log('Video actual: ' + video.title + ' (' + video.id + ')');
+        }
+
+        function setConfig(patch) {
+          store['pal.config'] = Object.assign({}, store['pal.config'], patch);
+          changeListeners.forEach(function (listener) {
+            listener({ 'pal.config': { newValue: store['pal.config'] } }, 'local');
+          });
+        }
+
+        // Simulated like: intercept the click and flip aria-pressed ourselves,
+        // so no real account is involved.
+        document.addEventListener(
+          'click',
+          function (event) {
+            const button =
+              event.target && event.target.closest
+                ? event.target.closest('like-button-view-model button')
+                : null;
+            if (!button) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const video = currentVideo();
+            clicksByVideo[video.id] = (clicksByVideo[video.id] || 0) + 1;
+            likeOrder.push(video.id);
+            button.setAttribute('aria-pressed', 'true');
+            button.setAttribute('aria-label', 'Quitar Me gusta');
+            log('Clic de Me gusta simulado en ' + video.id);
+          },
+          true
+        );
+
+        document.querySelector('.ytp-next-button').addEventListener('click', function () {
+          if (index >= videos.length - 1) {
+            log('No hay siguiente: fin de la playlist simulada');
+            return;
+          }
+          index += 1;
+          renderVideo();
+        });
+
+        document.querySelector('.ytp-prev-button').addEventListener('click', function () {
+          prevButtonClicks += 1;
+          if (prevButtonRestarts) {
+            log('Botón anterior: reinicia el video actual (simulado)');
+            return;
+          }
+          if (index <= 0) {
+            log('No hay anterior: inicio de la playlist simulada');
+            return;
+          }
+          index -= 1;
+          renderVideo();
+        });
+
+        // YouTube's playlist panel items navigate through the SPA. Intercept
+        // them so the harness stays on the same page, and make them work even
+        // when the player's previous button would only restart the video.
+        document.addEventListener(
+          'click',
+          function (event) {
+            const anchor =
+              event.target && event.target.closest
+                ? event.target.closest('ytd-playlist-panel-video-renderer a')
+                : null;
+            if (!anchor) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+
+            const wrapper = anchor.closest('ytd-playlist-panel-video-renderer');
+            const items = Array.from(document.querySelectorAll('ytd-playlist-panel-video-renderer'));
+            const targetIndex = items.indexOf(wrapper);
+            if (targetIndex < 0) return;
+
+            index = targetIndex;
+            renderVideo();
+          },
+          true
+        );
+
+        function loadScript(src) {
+          return new Promise(function (resolve, reject) {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+
+        function assert(name, condition, detail) {
+          return {
+            name: name,
+            pass: Boolean(condition),
+            detail: detail == null ? '' : String(detail),
+          };
+        }
+
+        async function run() {
+          await loadScript('/extension/src/lib.js');
+          await loadScript('/extension/src/content.js');
+          await sleep(400);
+
+          if (!messageListeners.length) {
+            throw new Error('El content script no registró el listener de mensajes.');
+          }
+
+          /* Fase 1: like + avance automático */
+          log('Fase 1: iniciar y dar Me gusta al video 1');
+          const start1 = await send({ type: 'PAL_START' });
+          if (!start1.ok) throw new Error('No se pudo iniciar: ' + start1.error);
+
+          const afterFirstLike = await waitForState(function (state) {
+            return state.stats.liked >= 1 && state.videoId === 'harness2';
+          }, 10000);
+
+          const hud = document.getElementById('playlist-auto-liker-hud');
+          const hudText = hud && hud.shadowRoot ? hud.shadowRoot.textContent : '';
+          const phase1State = await getState();
+          await send({ type: 'PAL_STOP' });
+          log('Fase 1 completada: like=' + phase1State.stats.liked + ', URL=' + location.href);
+
+          /* Fase 2: pausa durante la espera */
+          log('Fase 2: pausar durante la espera');
+          setConfig({ fixedSeconds: 3 });
+          const start2 = await send({ type: 'PAL_START' });
+          if (!start2.ok) throw new Error('No se pudo reiniciar: ' + start2.error);
+
+          const waiting = await waitForState(function (state) {
+            return state.phase === 'waiting';
+          }, 8000);
+
+          const pauseResponse = await send({ type: 'PAL_PAUSE' });
+          const pausedState = pauseResponse.state;
+          const clicksAtPause = clicksByVideo[currentVideo().id] || 0;
+          const countdownAtPause = pausedState.countdown;
+          log('Pausado con cuenta atrás: ' + countdownAtPause);
+
+          await sleep(1600);
+          const stillPausedState = await getState();
+          const clicksDuringPause = clicksByVideo[currentVideo().id] || 0;
+
+          const resumeResponse = await send({ type: 'PAL_RESUME' });
+          const afterResume = await waitForState(function (state) {
+            return state.stats.liked >= 2;
+          }, 10000);
+          await sleep(700);
+          const phase2State = await getState();
+          await send({ type: 'PAL_STOP' });
+
+          /* Fase 3: los videos del historial se omiten sin espera ni doble clic */
+          log('Fase 3: re-ejecutar sobre videos ya likeados');
+          setConfig({ fixedSeconds: 5 });
+          index = 0;
+          renderVideo();
+          document.querySelector('like-button-view-model button').setAttribute('aria-pressed', 'false');
+          const clicksBeforeSkip = Object.assign({}, clicksByVideo);
+          const skipStartedAt = Date.now();
+          const start3 = await send({ type: 'PAL_START' });
+          if (!start3.ok) throw new Error('No se pudo iniciar la fase 3: ' + start3.error);
+
+          const skippedState = await waitForState(function (state) {
+            return state.phase === 'done' || state.stats.skipped >= 3;
+          }, 10000);
+          const skipElapsedMs = Date.now() - skipStartedAt;
+          const phase3State = await getState();
+          await send({ type: 'PAL_STOP' });
+          log('Fase 3 completada en ' + skipElapsedMs + ' ms: omitidos=' + phase3State.stats.skipped);
+
+          /* Fase 4: recorrido descendente del final al inicio */
+          log('Fase 4: recorrido descendente desde el final');
+          videos = [
+            { id: 'harness4', title: 'Video de prueba 4' },
+            { id: 'harness5', title: 'Video de prueba 5' },
+            { id: 'harness6', title: 'Video de prueba 6' },
+          ];
+          renderPlaylistItems();
+          index = videos.length - 1;
+          renderVideo();
+          setConfig({ fixedSeconds: 1, direction: 'descending' });
+          prevButtonRestarts = true;
+          const prevClicksBefore = prevButtonClicks;
+          const orderStart = likeOrder.length;
+          const start4 = await send({ type: 'PAL_START' });
+          if (!start4.ok) throw new Error('No se pudo iniciar la fase 4: ' + start4.error);
+
+          const doneState4 = await waitForState(function (state) {
+            return state.phase === 'done';
+          }, 15000);
+          const phase4State = await getState();
+          const descendingOrder = likeOrder.slice(orderStart);
+          await send({ type: 'PAL_STOP' });
+          log(
+            'Fase 4 completada: orden=' +
+              descendingOrder.join(' → ') +
+              ', fase=' +
+              phase4State.phase
+          );
+
+          const checks = [
+            assert('El primer video recibió un único Me gusta', clicksByVideo.harness1 === 1, clicksByVideo.harness1),
+            assert('Se avanzó al video 2', afterFirstLike && afterFirstLike.videoId === 'harness2', location.href),
+            assert(
+              'El panel flotante se creó y muestra el estado',
+              Boolean(hud) && /Me Gusta/i.test(hudText) && /Auto-Liker/i.test(hudText),
+              hudText.replace(/\s+/g, ' ').trim().slice(0, 160)
+            ),
+            assert('La playlist se detectó por su nombre', phase1State.playlistName === 'Playlist de prueba', phase1State.playlistName),
+            assert('La pausa se refleja en el estado', pausedState.paused === true, pausedState.phase),
+            assert(
+              'La cuenta atrás queda congelada',
+              countdownAtPause != null && stillPausedState.countdown === countdownAtPause,
+              countdownAtPause + ' → ' + stillPausedState.countdown
+            ),
+            assert(
+              'No se pulsa Me gusta mientras está pausado',
+              clicksDuringPause === clicksAtPause,
+              clicksAtPause + ' → ' + clicksDuringPause
+            ),
+            assert('La reanudación aplica el Me gusta pendiente', afterResume && afterResume.stats.liked >= 2, afterResume && afterResume.stats.liked),
+            assert(
+              'El video 2 solo recibió un clic',
+              (clicksByVideo.harness2 || 0) === 1,
+              clicksByVideo.harness2 || 0
+            ),
+            assert(
+              'El historial guarda los videos likeados',
+              Boolean(store['pal.history'] && store['pal.history'].harness1 && store['pal.history'].harness2),
+              Object.keys(store['pal.history'] || {}).join(', ')
+            ),
+            assert(
+              'Los videos ya likeados se omiten sin doble clic',
+              phase3State.stats.skipped >= 3 &&
+                (clicksByVideo.harness1 || 0) === (clicksBeforeSkip.harness1 || 0) &&
+                (clicksByVideo.harness2 || 0) === (clicksBeforeSkip.harness2 || 0) &&
+                (clicksByVideo.harness3 || 0) === (clicksBeforeSkip.harness3 || 0),
+              'omitidos=' + phase3State.stats.skipped + ', clics=' + JSON.stringify(clicksByVideo)
+            ),
+            assert(
+              'Omitir no espera el intervalo configurado',
+              skipElapsedMs < 4000,
+              skipElapsedMs + ' ms con intervalo de 5 s'
+            ),
+            assert(
+              'Una nueva ejecución no vuelve a dar Me gusta',
+              phase3State.stats.liked === 0,
+              phase3State.stats.liked
+            ),
+            assert('No hubo errores inesperados', phase2State.stats.errors === 0 && phase3State.stats.errors === 0, phase2State.stats.errors + '/' + phase3State.stats.errors),
+            assert(
+              'El recorrido descendente va del final al inicio',
+              descendingOrder.join(',') === 'harness6,harness5,harness4',
+              descendingOrder.join(' → ')
+            ),
+            assert(
+              'Cada video descendente recibió un solo Me gusta',
+              (clicksByVideo.harness6 || 0) === 1 &&
+                (clicksByVideo.harness5 || 0) === 1 &&
+                (clicksByVideo.harness4 || 0) === 1,
+              JSON.stringify({
+                harness4: clicksByVideo.harness4 || 0,
+                harness5: clicksByVideo.harness5 || 0,
+                harness6: clicksByVideo.harness6 || 0,
+              })
+            ),
+            assert(
+              'El recorrido descendente termina en el primer video',
+              phase4State.phase === 'done' && phase4State.videoId === 'harness4',
+              phase4State.phase + ' / ' + phase4State.videoId
+            ),
+            assert(
+              'El estado muestra la dirección descendente',
+              Boolean(doneState4) && doneState4.direction === 'descending' && phase4State.direction === 'descending',
+              phase4State.direction
+            ),
+            assert(
+              'El recorrido descendente no usa el botón anterior del reproductor',
+              prevButtonClicks === prevClicksBefore,
+              'clics en anterior=' + (prevButtonClicks - prevClicksBefore)
+            ),
+            assert(
+              'La dirección se guarda en la configuración',
+              store['pal.config'].direction === 'descending',
+              store['pal.config'].direction
+            ),
+            assert(
+              'El recorrido descendente no tuvo errores',
+              phase4State.stats.errors === 0 && phase4State.stats.liked === 3,
+              'errores=' + phase4State.stats.errors + ', likes=' + phase4State.stats.liked
+            ),
+            assert(
+              'La posición global se refleja en indexLabel',
+              Boolean(phase1State.indexLabel) && /\d+\s+de\s+\d+/.test(phase1State.indexLabel),
+              phase1State.indexLabel
+            ),
+          ];
+
+          const failed = checks.filter(function (check) {
+            return !check.pass;
+          });
+
+          resultElement.innerHTML = checks
+            .map(function (check) {
+              return (
+                '<div class="' +
+                (check.pass ? 'ok' : 'bad') +
+                '">' +
+                (check.pass ? 'PASS' : 'FAIL') +
+                ' · ' +
+                check.name +
+                (check.detail ? '  [' + check.detail + ']' : '') +
+                '</div>'
+              );
+            })
+            .join('');
+
+          globalThis.__TEST_RESULTS__ = {
+            ok: failed.length === 0,
+            failed: failed.map(function (check) {
+              return check.name;
+            }),
+            checks: checks,
+            clicksByVideo: clicksByVideo,
+            history: store['pal.history'],
+            phase1: {
+              liked: phase1State.stats.liked,
+              skipped: phase1State.stats.skipped,
+              errors: phase1State.stats.errors,
+              videoId: phase1State.videoId,
+              playlistName: phase1State.playlistName,
+              indexLabel: phase1State.indexLabel,
+              action: phase1State.action,
+            },
+            phase2: {
+              liked: phase2State.stats.liked,
+              errors: phase2State.stats.errors,
+              phase: phase2State.phase,
+              videoId: phase2State.videoId,
+            },
+            phase3: {
+              skipped: phase3State.stats.skipped,
+              liked: phase3State.stats.liked,
+              errors: phase3State.stats.errors,
+              phase: phase3State.phase,
+              elapsedMs: skipElapsedMs,
+            },
+            phase4: {
+              order: descendingOrder,
+              liked: phase4State.stats.liked,
+              errors: phase4State.stats.errors,
+              phase: phase4State.phase,
+              videoId: phase4State.videoId,
+              direction: phase4State.direction,
+            },
+            countdown: {
+              paused: countdownAtPause,
+              stillPaused: stillPausedState.countdown,
+            },
+            urls: { final: location.href },
+          };
+          log(failed.length === 0 ? 'TODAS LAS PRUEBAS PASARON' : 'FALLOS: ' + failed.length);
+        }
+
+        renderPlaylistItems();
+        renderVideo();
+
+        run().catch(function (error) {
+          log('ERROR: ' + (error && error.stack ? error.stack : error));
+          resultElement.innerHTML = '<div class="bad">ERROR · ' + String(error) + '</div>';
+          globalThis.__TEST_RESULTS__ = { ok: false, error: String(error), log: logLines };
+        });
+
+        window.addEventListener('error', function (event) {
+          log('window.onerror: ' + event.message);
+        });
+      })();
+    </script>
+  </body>
+</html>

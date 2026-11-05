@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Playlist Auto-Liker</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="app-head">
+      <div class="logo" aria-hidden="true">👍</div>
+      <div class="head-text">
+        <h1>Playlist Auto-Liker</h1>
+        <p>Me Gusta automáticos en tu playlist</p>
+      </div>
+      <span id="conn-dot" class="conn-dot" title="Estado de la conexión"></span>
+    </header>
+
+    <main>
+      <section class="context" aria-label="Contexto">
+        <div id="context-line" class="context-line">Buscando una playlist…</div>
+        <div id="playlist-name" class="muted"></div>
+      </section>
+
+      <section class="status-card" aria-label="Estado del proceso">
+        <div class="status-top">
+          <span id="phase" class="phase">Inactivo</span>
+          <span id="direction-label" class="direction-label"></span>
+          <span id="index-label" class="index-label"></span>
+        </div>
+        <div id="video-title" class="video-title">—</div>
+        <div id="action" class="action">Abre una playlist de YouTube y pulsa Iniciar.</div>
+        <div id="next-step" class="next-step"></div>
+        <div id="countdown" class="countdown" hidden></div>
+
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-value ok" id="liked-count">0</span>
+            <span class="stat-label">Me Gusta</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="skipped-count">0</span>
+            <span class="stat-label">Omitidos</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value err" id="errors-count">0</span>
+            <span class="stat-label">Errores</span>
+          </div>
+        </div>
+
+        <div id="error" class="error" hidden></div>
+      </section>
+
+      <section class="controls" aria-label="Controles">
+        <button id="start" class="btn primary" type="button" disabled>Iniciar</button>
+        <div class="control-row">
+          <button id="pause" class="btn" type="button" hidden>Pausar</button>
+          <button id="resume" class="btn" type="button" hidden>Reanudar</button>
+          <button id="stop" class="btn danger" type="button" disabled>Detener</button>
+        </div>
+        <p id="control-hint" class="hint center">
+          La extensión solo se activa en videos que forman parte de una playlist.
+        </p>
+      </section>
+
+      <section class="settings" aria-label="Dirección del recorrido">
+        <div class="section-head">
+          <h2>Dirección del recorrido</h2>
+        </div>
+
+        <div class="mode-row">
+          <label class="mode-option">
+            <input type="radio" name="direction" value="ascending" checked />
+            <span>Ascendente</span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="direction" value="descending" />
+            <span>Descendente</span>
+          </label>
+        </div>
+
+        <p class="hint">
+          Por defecto se recorre la playlist en su orden original. Ascendente: del video actual
+          hacia el final. Descendente: del video actual hacia el inicio. Se aplica al iniciar.
+        </p>
+      </section>
+
+      <section class="settings" aria-label="Configuración del intervalo">
+        <div class="section-head">
+          <h2>Intervalo entre Me Gusta</h2>
+          <span id="save-state" class="save-state" aria-live="polite"></span>
+        </div>
+
+        <div class="mode-row">
+          <label class="mode-option">
+            <input type="radio" name="mode" value="fixed" checked />
+            <span>Fijo</span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="mode" value="range" />
+            <span>Rango aleatorio</span>
+          </label>
+        </div>
+
+        <div id="fixed-row" class="field-row">
+          <label for="fixed-seconds">Segundos</label>
+          <div class="input-wrap">
+            <input id="fixed-seconds" type="number" min="1" max="3600" step="1" inputmode="numeric" value="8" />
+            <span>s</span>
+          </div>
+        </div>
+
+        <div id="range-row" class="field-row" hidden>
+          <label for="min-seconds">Entre</label>
+          <div class="input-wrap">
+            <input id="min-seconds" type="number" min="1" max="3600" step="1" inputmode="numeric" value="5" />
+          </div>
+          <span class="and">y</span>
+          <div class="input-wrap">
+            <input id="max-seconds" type="number" min="1" max="3600" step="1" inputmode="numeric" value="15" />
+            <span>s</span>
+          </div>
+        </div>
+
+        <p class="hint">Los videos ya likeados se omiten sin esperar.</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span id="history-count"></span>
+      <span class="footer-note">Panel flotante en la página</span>
+    </footer>
+
+    <div id="toast" class="toast" role="status" hidden></div>
+
+    <script src="lib.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
