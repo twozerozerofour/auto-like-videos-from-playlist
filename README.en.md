@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="extension/icons/icon128.png" alt="Playlist Auto-Liker icon" width="96" height="96" />
+
 # Playlist Auto-Liker
 
 **Local-first Chromium extension that traverses YouTube playlists and automatically likes unliked videos.**

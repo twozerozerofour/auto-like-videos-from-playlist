@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="extension/icons/icon128.png" alt="Playlist Auto-Liker icon" width="96" height="96" />
+
 # Playlist Auto-Liker
 
 **Extensión local-first para navegadores Chromium que recorre playlists de YouTube y da Me Gusta automáticamente.**
