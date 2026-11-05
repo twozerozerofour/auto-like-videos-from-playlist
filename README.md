@@ -1,9 +1,14 @@
+<div align="center">
+
 # Playlist Auto-Liker
----
+
 **Extensión local-first para navegadores Chromium que recorre playlists de YouTube y da Me Gusta automáticamente.**
+
 100% privada por diseño: sin servidores, sin telemetría ni recopilación de datos. Auditada para máximo rendimiento y seguridad.
 
 Español · [English](README.en.md)
+
+</div>
 
 ## Privacidad y Seguridad
 

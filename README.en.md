@@ -1,9 +1,14 @@
+<div align="center">
+
 # Playlist Auto-Liker
----
+
 **Local-first Chromium extension that traverses YouTube playlists and automatically likes unliked videos.**
+
 100% private by design: zero servers, zero telemetry or data collection. Audited for uncompromised performance and safety.
 
 [Español](README.md) · English
+
+</div>
 
 ## Privacy & Security
 
